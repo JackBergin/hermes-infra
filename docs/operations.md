@@ -49,3 +49,7 @@ The Docker container can be "running" while agent tasks fail. Check logs, provid
 Before an upgrade, review upstream changes, obtain a tested backup, then run `make upgrade IMAGE=...`. This updates the image reference and recreates the container. If a migration breaks state, use the pre-upgrade image and pre-upgrade archive together. Do not run old and new gateways concurrently against the same data directory.
 
 For multi-instance deployments, allocate an **independent** persistent home for each instance; do not mount one home into multiple concurrently running gateways. This template is intentionally single instance rather than unsupported active-active.
+
+## Behavioral checks
+
+Use `make eval` on an isolated test deployment to run opt-in, provider-billed output checks. These are not exhaustive semantic quality tests; see [Evaluations](evaluations.md).

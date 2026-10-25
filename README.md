@@ -44,6 +44,10 @@ make upgrade IMAGE=nousresearch/hermes-agent@sha256:<64-hex-character-digest>
 
 An upgrade takes a verified pre-upgrade backup and changes the image reference. Configuration migrations may be irreversible. Rollback requires restoring matching pre-upgrade **image and state**; it is not an automatic tag downgrade.
 
+### Behavioral regression checks
+
+Run `make eval` on an **isolated test deployment** to execute the opt-in sample output-contract evaluations and write an ignored report under `reports/`. This makes real model calls and may mutate agent state; it is deliberately excluded from CI. See [Evaluations](docs/evaluations.md).
+
 ### Features
 
 - Pinned-image support, persistent bind-mounted state, and no network ports published by default.
@@ -51,7 +55,7 @@ An upgrade takes a verified pre-upgrade backup and changes the image reference. 
 - Native Hermes SQLite-consistent ZIP backups and CRC verification.
 - Optional encrypted off-site Restic storage.
 - Isolated restoration smoke tests with an alternate state directory.
-- A single `hermesctl` command interface, preflight diagnostics, GitHub Actions static checks and unit tests.
+- A single `hermesctl` command interface, preflight diagnostics, GitHub Actions static checks, unit tests, and opt-in output regression probes.
 - No second gateway against the same state directory, and no Docker socket exposed to the agent.
 
 ### Scope and limitations

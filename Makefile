@@ -42,3 +42,8 @@ upgrade:
 check:
 	@$(PYTHON) -m unittest discover -s tests -v
 	@$(PYTHON) -m py_compile scripts/hermesctl.py
+
+.PHONY: eval
+
+eval:
+	@$(PYTHON) scripts/evaluate.py

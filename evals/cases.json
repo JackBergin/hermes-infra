@@ -1,0 +1,19 @@
+[
+  {
+    "id": "exact-answer-contract",
+    "prompt": "Return exactly the single word READY with no punctuation or formatting.",
+    "expected_exact": "READY"
+  },
+  {
+    "id": "json-output-contract",
+    "prompt": "Return exactly a valid JSON object with one field named status and its value the string ok. No Markdown fences.",
+    "expected_json": {
+      "status": "ok"
+    }
+  },
+  {
+    "id": "basic-reasoning",
+    "prompt": "What is 17 times 3? Answer with the number only.",
+    "expected_exact": "51"
+  }
+]
