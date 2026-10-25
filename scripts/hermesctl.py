@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -169,14 +171,35 @@ def backup(offsite: bool = False) -> Path:
     compose("cp", f"hermes:{container_path}", str(path))
     os.chmod(path, 0o600)
     check_zip(path)
+    # Record provenance so recovery can select the matching code and image.
+    try:
+        revision = run("git", "rev-parse", "HEAD", capture=True)
+    except InfraError:
+        revision = "unavailable"
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    manifest = path.with_suffix(".manifest.json")
+    manifest.write_text(json.dumps({
+        "archive": path.name,
+        "sha256": digest.hexdigest(),
+        "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "git_revision": revision,
+        "hermes_image": env_values().get("HERMES_IMAGE", ""),
+        "state_directory": str(state_path()),
+        "archive_size_bytes": path.stat().st_size,
+    }, indent=2) + "\n")
+    os.chmod(manifest, 0o600)
     print(f"Verified local backup: {path}")
+    print(f"Recovery manifest: {manifest}")
     if offsite:
         if not os.environ.get("RESTIC_REPOSITORY"):
             raise InfraError("RESTIC_REPOSITORY is required for offsite backups.")
         if not shutil.which("restic"):
             raise InfraError("restic is not installed on the host.")
-        run("restic", "backup", str(path), "--tag", "hermes-infra")
-        print("Encrypted off-site backup sent to Restic repository.")
+        run("restic", "backup", str(path), str(manifest), "--tag", "hermes-infra")
+        print("Encrypted off-site backup and manifest sent to Restic repository.")
     else:
         print("WARNING: This is a LOCAL backup only. Use 'make backup-offsite' for disaster recovery.")
     return path
