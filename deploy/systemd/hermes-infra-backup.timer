@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Hermes Infra encrypted offsite backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=hermes-infra-backup.service
+
+[Install]
+WantedBy=timers.target

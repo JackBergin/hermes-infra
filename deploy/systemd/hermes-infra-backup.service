@@ -1,0 +1,12 @@
+[Unit]
+Description=Hermes Infra verified encrypted offsite backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# EDIT: replace %h/hermes-infra if the checkout is elsewhere.
+WorkingDirectory=%h/hermes-infra
+# Create mode-0600 file outside Git with RESTIC_REPOSITORY and RESTIC_PASSWORD_FILE.
+EnvironmentFile=%h/.config/hermes-infra/backup.env
+ExecStart=/usr/bin/make backup-offsite
