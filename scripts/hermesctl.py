@@ -162,8 +162,11 @@ def backup(offsite: bool = False) -> Path:
     else:
         compose("run", "--rm", "--no-deps", "hermes", "backup",
                 "--output", container_path, "--keep", "0")
-    # docker compose cp avoids permission issues reading UID-10000 state from host.
-    compose("cp", f"hermes:{container_path}", str(path)) if is_running() else copy_from_state(container_path, path)
+    # docker compose cp avoids UID-10000 bind-mount ownership issues on the host.
+    # When stopped, create (but do not start) the service container so cp has a source.
+    if not is_running():
+        compose("create", "--no-recreate", "hermes")
+    compose("cp", f"hermes:{container_path}", str(path))
     os.chmod(path, 0o600)
     check_zip(path)
     print(f"Verified local backup: {path}")
@@ -179,17 +182,6 @@ def backup(offsite: bool = False) -> Path:
     return path
 
 
-def copy_from_state(container_path: str, destination: Path) -> None:
-    # When gateway is stopped, copy through a one-off container to avoid depending
-    # on local Unix ownership of the Hermes data directory.
-    # Mount destination directory separately, letting cp preserve content safely.
-    compose("run", "--rm", "--no-deps", "-v",
-            f"{BACKUPS.resolve()}:/backup-export", "hermes", "bash", "-c",
-            f"cp {container_path} /backup-export/{destination.name}")
-    if not destination.exists():
-        raise InfraError("Backup was not copied out of the container.")
-
-
 def restore(archive: Path, force: bool = False, smoke: bool = False) -> None:
     require_config()
     check_zip(archive)
@@ -199,6 +191,11 @@ def restore(archive: Path, force: bool = False, smoke: bool = False) -> None:
             target.mkdir(mode=0o700)
             custom_env = os.environ.copy()
             custom_env["HERMES_STATE_DIR"] = str(target)
+            # Keep the temporary bind mount owned by the invoking host user so
+            # TemporaryDirectory can clean it up after the isolated smoke test.
+            if hasattr(os, "getuid") and hasattr(os, "getgid"):
+                custom_env["HERMES_UID"] = str(os.getuid())
+                custom_env["HERMES_GID"] = str(os.getgid())
             compose("run", "--rm", "--no-deps", "-v",
                     f"{archive}:/tmp/hermes-restore.zip:ro", "hermes",
                     "import", "/tmp/hermes-restore.zip", "--force", env=custom_env)
