@@ -5,6 +5,7 @@
 
 # Hermes mutable state and secrets
 state/
+state.old-*/
 backups/
 restore-test-*/
 *.zip

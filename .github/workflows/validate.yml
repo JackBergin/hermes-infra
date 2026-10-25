@@ -26,4 +26,4 @@ jobs:
           docker compose config --quiet
       - name: Check for accidentally committed sensitive artifacts
         run: |
-          ! git ls-files | grep -E '(^state/|^backups/|(^|/)\.env$|\.zip$)'
+          ! git ls-files | grep -E '(^state/|^state\.old-|^backups/|(^|/)\.env$|\.zip$)'

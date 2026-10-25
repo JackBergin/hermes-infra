@@ -342,6 +342,43 @@ def restore(archive: Path, force: bool = False, smoke: bool = False) -> None:
     print("Hermes archive imported. Validate configuration before 'make up'.")
 
 
+def set_aside(state: Path, stamp: str) -> Path:
+    """Rename *state* to a timestamped sibling. Never deletes or overwrites anything."""
+    aside = state.with_name(f"{state.name}.old-{stamp}")
+    if aside.exists():
+        raise InfraError(f"{aside} already exists; refusing to overwrite it.")
+    state.rename(aside)
+    return aside
+
+
+def reset() -> None:
+    values = require_config()
+    state = state_path(values)
+    if not state.is_dir() or not any(state.iterdir()):
+        raise InfraError(f"Nothing to reset: {state} is missing or empty.")
+    print(f"Reset takes a verified backup, stops the gateway, and moves {state} aside.\n"
+          "Nothing is deleted, but Hermes starts over with empty state: setup, "
+          "credentials, sessions and memories.")
+    if input("Type 'reset' to continue: ").strip() != "reset":
+        raise InfraError("Reset cancelled; nothing was changed.")
+    # Backup comes first so a failure leaves the deployment exactly as it was.
+    archive = backup(offsite=False)
+    compose("down")
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    try:
+        aside = set_aside(state, stamp)
+    except OSError as exc:
+        raise InfraError(f"Could not move {state} aside ({exc}). The gateway is stopped "
+                         "and its state is untouched; run 'make up' to resume.") from exc
+    state.mkdir(mode=0o700)
+    print(f"Previous state kept at {aside} (Git-ignored; it still holds credentials).")
+    print(f"Verified backup: {archive}")
+    steps = ["make setup", "make configure"]
+    if values.get("HERMES_DASHBOARD", "") in DASHBOARD_ON:
+        steps.append("make dashboard-auth")
+    print("Next: " + ", ".join(f"'{step}'" for step in steps) + ", then 'make up'.")
+
+
 def upgrade(image: str) -> None:
     require_config()
     if not DIGEST.fullmatch(image):
@@ -377,7 +414,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
     for action in ("help", "init", "setup", "configure", "dashboard-auth", "up",
                    "down", "restart", "logs", "doctor", "backup", "restore",
-                   "restore-test", "upgrade"):
+                   "restore-test", "reset", "upgrade"):
         p = sub.add_parser(action)
         if action == "backup":
             p.add_argument("--offsite", action="store_true")
@@ -428,6 +465,8 @@ def main() -> None:
         restore(args.archive.expanduser().resolve(),
                 force=getattr(args, "force", False),
                 smoke=(args.command == "restore-test"))
+    elif args.command == "reset":
+        reset()
     elif args.command == "upgrade":
         upgrade(args.image)
 

@@ -29,6 +29,7 @@ The default stable tag in `.env.example` is **not immutable**. Verify tags and d
 | Back up | `make backup` | Verified local ZIP only |
 | Offsite backup | `make backup-offsite` | Requires Restic, secret configuration |
 | Test restoration | `make restore-test FILE=backups/<archive>.zip` | Isolated import + config path probe |
+| Start fresh | `make reset` | Verified backup, stops the gateway, moves `state/` to `state.old-<UTC time>/`; never deletes |
 | Upgrade | `make upgrade IMAGE=<digest-pinned-image>` | Makes local pre-upgrade backup; migrations may be irreversible |
 
 ## Working with skills

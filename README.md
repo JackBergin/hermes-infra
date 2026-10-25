@@ -45,6 +45,14 @@ make restore FILE=backups/hermes-YYYYMMDDTHHMMSSZ.zip # Requires empty state
 
 Configure `RESTIC_REPOSITORY` and `RESTIC_PASSWORD_FILE` in your shell/secret manager, initialize your Restic repository once (`restic init`), and schedule `make backup-offsite`. **Do not commit backup credentials or plaintext archives.** Local archives are in `backups/`, which is Git-ignored. `make backup` does not make an off-site copy.
 
+### Starting fresh
+
+```bash
+make reset              # Verified backup, stops the gateway, moves state/ to state.old-<UTC time>/
+```
+
+Nothing is deleted. Afterwards run `make setup` and `make configure` (plus `make dashboard-auth` if you use the dashboard), then `make up`. To go back, run `make down`, move the new `state/` out of the way, and rename the `state.old-…` folder to `state`. Right after a reset `state/` is empty, so `make restore FILE=<the backup it printed>` also works. The old folder still holds credentials. It is Git-ignored; delete it yourself once you no longer need it.
+
 For upgrades, provide a **digest-pinned** image (example is a placeholder, not a real digest):
 
 ```bash

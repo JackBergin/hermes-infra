@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help init setup configure dashboard-auth up down restart logs doctor backup backup-offsite restore restore-force restore-test upgrade check
+.PHONY: help init setup configure dashboard-auth up down restart logs doctor backup backup-offsite restore restore-force restore-test reset upgrade check
 
 PYTHON ?= python3
 CTL = $(PYTHON) scripts/hermesctl.py
@@ -38,6 +38,8 @@ restore-force:
 restore-test:
 	@test -n "$(FILE)" || (echo "Use FILE=/absolute/or/relative/backup.zip" >&2; exit 2)
 	@$(CTL) restore-test "$(FILE)"
+reset:
+	@$(CTL) reset
 upgrade:
 	@test -n "$(IMAGE)" || (echo "Use IMAGE=nousresearch/hermes-agent@sha256:<digest>" >&2; exit 2)
 	@$(CTL) upgrade "$(IMAGE)"

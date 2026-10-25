@@ -1,10 +1,13 @@
 """Pure-unit tests, no Docker daemon or Hermes secrets required."""
 import base64
+import contextlib
 import hashlib
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +78,76 @@ class DashboardTests(unittest.TestCase):
             created = Path(directory) / "new.env"
             module.update_env_file(created, {"HERMES_DASHBOARD": "1", "UNSET": None})
             self.assertEqual(created.read_text(), "HERMES_DASHBOARD=1\n")
+
+
+class ResetTests(unittest.TestCase):
+    """Docker is mocked: these check ordering and that state is never deleted."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.state = self.root / "state"
+        self.state.mkdir()
+        (self.state / "config.yaml").write_text("model: {}\n")
+        self.calls = []
+        values = {"HERMES_IMAGE": "nousresearch/hermes-agent:stable",
+                  "HERMES_STATE_DIR": str(self.state)}
+
+        def backup(offsite=False):
+            self.calls.append("backup")
+            return Path("backups/hermes-test.zip")
+
+        def compose(*args, **kwargs):
+            self.calls.append(" ".join(args))
+
+        for name, fake in (("require_config", lambda: values),
+                           ("backup", backup), ("compose", compose)):
+            patcher = mock.patch.object(module, name, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def reset(self, answer):
+        with mock.patch("builtins.input", return_value=answer), \
+                contextlib.redirect_stdout(io.StringIO()):
+            module.reset()
+
+    def test_backs_up_then_stops_then_sets_state_aside(self):
+        self.reset("reset")
+        self.assertEqual(self.calls, ["backup", "down"])
+        [aside] = self.root.glob("state.old-*")
+        self.assertEqual((aside / "config.yaml").read_text(), "model: {}\n")
+        self.assertEqual(list(self.state.iterdir()), [])
+        self.assertEqual(self.state.stat().st_mode & 0o777, 0o700)
+
+    def test_cancel_or_failed_backup_changes_nothing(self):
+        with self.assertRaises(module.InfraError):
+            self.reset("no")
+
+        def failing_backup(offsite=False):
+            raise module.InfraError("backup failed")
+
+        with mock.patch.object(module, "backup", failing_backup), \
+                self.assertRaises(module.InfraError):
+            self.reset("reset")
+        self.assertEqual(self.calls, [])
+        self.assertTrue((self.state / "config.yaml").is_file())
+        self.assertEqual(list(self.root.glob("state.old-*")), [])
+
+    def test_refuses_empty_state(self):
+        (self.state / "config.yaml").unlink()
+        with self.assertRaises(module.InfraError):
+            self.reset("reset")
+        self.assertEqual(self.calls, [])
+
+    def test_set_aside_never_overwrites(self):
+        aside = self.root / "state.old-20260101T000000Z"
+        aside.mkdir()
+        (aside / "keep").write_text("old")
+        with self.assertRaises(module.InfraError):
+            module.set_aside(self.state, "20260101T000000Z")
+        self.assertEqual((aside / "keep").read_text(), "old")
+        self.assertTrue((self.state / "config.yaml").is_file())
 
 
 if __name__ == "__main__":
