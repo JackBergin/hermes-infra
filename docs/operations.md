@@ -25,6 +25,7 @@ The default stable tag in `.env.example` is **not immutable**. Verify tags and d
 | Logs | `make logs` | Logs can contain sensitive data |
 | Check Compose and local skills | `make doctor` | Reports image pin, mount, skill collisions |
 | Re-run config approvals | `make down && make configure` | Mutates live Hermes config via official CLI |
+| Dashboard login | `make dashboard-auth` | Enables the loopback dashboard; rerun to rotate the password and sign out sessions |
 | Back up | `make backup` | Verified local ZIP only |
 | Offsite backup | `make backup-offsite` | Requires Restic, secret configuration |
 | Test restoration | `make restore-test FILE=backups/<archive>.zip` | Isolated import + config path probe |
@@ -38,7 +39,7 @@ Upstream skill precedence and write approval are documented in the [skills guide
 
 ## Network posture
 
-By default, no ports are published. Hermes can connect outbound to chat platforms. If you enable its API or dashboard, configure authentication, bind to loopback/trusted interfaces or use a secured reverse proxy, and restrict ingress in the host firewall. Do not set open CORS origins on a public service.
+Only the web dashboard is published, on host `127.0.0.1:9119` (change the host port with `HERMES_DASHBOARD_HOST_PORT`), and it stays off until `make dashboard-auth` sets a login. Gateway and API ports are not published. Hermes connects outbound to chat platforms. To reach the dashboard from another machine, use an SSH tunnel or Tailscale instead of changing the binding; see [Dashboard exposure](security.md#dashboard-exposure). If you enable the API server, set its key, keep it on loopback or behind a secured reverse proxy, and restrict ingress in the host firewall. Do not set open CORS origins on a public service.
 
 The default Compose stack does **not** expose the Docker socket or mount the host filesystem except the declared state and skill directories. Containers are not a complete sandbox: limit agent tools, MCP credentials, and host-level permissions according to your threat model.
 

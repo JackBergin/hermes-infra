@@ -6,12 +6,16 @@ Only Python standard library is required. No cloud credentials are stored here.
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import datetime as dt
+import getpass
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -24,6 +28,12 @@ EXAMPLE = ROOT / ".env.example"
 SKILLS = ROOT / "skills"
 BACKUPS = ROOT / "backups"
 DIGEST = re.compile(r"^nousresearch/hermes-agent@sha256:[0-9a-f]{64}$")
+ENV_KEY = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+# Values the image's s6 dashboard run script treats as enabled.
+DASHBOARD_ON = frozenset({"1", "true", "TRUE", "True", "yes", "YES", "Yes"})
+DASHBOARD_LOGIN = ("HERMES_DASHBOARD_BASIC_AUTH_USERNAME",
+                   "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH")
+DASHBOARD_USER = re.compile(r"^[A-Za-z0-9._@-]{1,64}$")
 
 
 class InfraError(RuntimeError):
@@ -125,6 +135,82 @@ def setup() -> None:
     print("Hermes setup finished. Next run 'make configure', then 'make up'.")
 
 
+def update_env_file(path: Path, updates: dict[str, str | None]) -> None:
+    """Set keys in a dotenv file (None removes them), keeping every other line."""
+    pending = dict(updates)
+    existing = path.read_text().splitlines() if path.exists() else []
+    lines = []
+    for line in existing:
+        match = ENV_KEY.match(line)
+        if match and match.group(1) in updates:
+            value = pending.pop(match.group(1), None)
+            if value is not None:
+                lines.append(f"{match.group(1)}={value}")
+            continue
+        lines.append(line)
+    lines += [f"{key}={value}" for key, value in pending.items() if value is not None]
+    # Atomic 0600 replace so Hermes never reads a half-written credentials file.
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".env.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+        if path.exists():
+            # Keep the owner (e.g. container UID 10000) so Hermes can still read it.
+            with contextlib.suppress(OSError):
+                os.chown(temp, path.stat().st_uid, path.stat().st_gid)
+        os.replace(temp, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp)
+        raise
+
+
+def hash_password(password: str) -> str:
+    """Same format and parameters as Hermes' plugins.dashboard_auth.basic.hash_password."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32, maxmem=0)
+    return f"scrypt$16384$8$1${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
+
+
+def dashboard_url(values: dict[str, str]) -> str:
+    return f"http://127.0.0.1:{values.get('HERMES_DASHBOARD_HOST_PORT') or '9119'}"
+
+
+def dashboard_auth() -> None:
+    values = require_config()
+    state = state_path(values)
+    if not state.is_dir():
+        raise InfraError("Missing state directory: run 'make init' and 'make setup' first.")
+    enabled = values.get("HERMES_DASHBOARD", "") in DASHBOARD_ON
+    # Only an already-enabled running container misses the change on 'make up'.
+    apply = "make restart" if enabled and is_running() else "make up"
+    username = input("Dashboard username [admin]: ").strip() or "admin"
+    if not DASHBOARD_USER.fullmatch(username):
+        raise InfraError("Username must be 1-64 letters, digits, or . _ @ -")
+    password = getpass.getpass("Dashboard password (12+ characters): ")
+    if len(password) < 12:
+        raise InfraError("Password must be at least 12 characters.")
+    if getpass.getpass("Repeat password: ") != password:
+        raise InfraError("Passwords do not match.")
+    credentials = state / ".env"
+    try:
+        update_env_file(credentials, {
+            "HERMES_DASHBOARD_BASIC_AUTH_USERNAME": username,
+            "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH": hash_password(password),
+            # Hermes prefers a plaintext env password over the hash.
+            "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD": None,
+            # A new token-signing key signs out every existing dashboard session.
+            "HERMES_DASHBOARD_BASIC_AUTH_SECRET": base64.b64encode(secrets.token_bytes(32)).decode(),
+        })
+    except PermissionError as exc:
+        raise InfraError(f"Cannot write {credentials}. Map HERMES_UID/HERMES_GID to your "
+                         "host user (docs/security.md) instead of loosening permissions.") from exc
+    if not enabled:
+        update_env_file(CONFIG, {"HERMES_DASHBOARD": "1"})
+    print(f"Dashboard login saved to {credentials} (scrypt hash; existing sessions revoked).")
+    print(f"Apply it with '{apply}', then open {dashboard_url(values)}")
+
+
 def doctor() -> None:
     values = require_config()
     state = state_path(values)
@@ -143,7 +229,22 @@ def doctor() -> None:
     print(f"Approved skills: {len(approved)}; local skills: {len(local)}")
     if overlap:
         print("  WARNING: Local skills shadow approved skills: " + ", ".join(sorted(overlap)))
-    print("Published API ports: none in the supplied Compose file.")
+    print("Published ports: dashboard only, on host loopback; gateway/API ports are not published.")
+    if values.get("HERMES_DASHBOARD", "") in DASHBOARD_ON:
+        print(f"Dashboard: enabled at {dashboard_url(values)}")
+        try:
+            login = env_values(state / ".env")
+        except PermissionError:
+            login = None
+            print("  Cannot read state/.env to check the dashboard login.")
+        if login is not None and not all(login.get(key) for key in DASHBOARD_LOGIN):
+            print("  WARNING: No dashboard login in state/.env, so Hermes will refuse to "
+                  "start it. Run 'make dashboard-auth'.")
+        if login and login.get("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"):
+            print("  WARNING: A plaintext dashboard password in state/.env overrides the "
+                  "hash. Run 'make dashboard-auth' to replace it.")
+    else:
+        print("Dashboard: disabled. Run 'make dashboard-auth' to set a login and enable it.")
     print("Backup target: local only unless RESTIC_REPOSITORY configured for --offsite.")
     if state.exists() and not state.is_dir():
         raise InfraError("Persistent state path is not a directory.")
@@ -274,8 +375,8 @@ def upgrade(image: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command")
-    for action in ("help", "init", "setup", "configure", "up", "down",
-                   "restart", "logs", "doctor", "backup", "restore",
+    for action in ("help", "init", "setup", "configure", "dashboard-auth", "up",
+                   "down", "restart", "logs", "doctor", "backup", "restore",
                    "restore-test", "upgrade"):
         p = sub.add_parser(action)
         if action == "backup":
@@ -305,6 +406,8 @@ def main() -> None:
         setup()
     elif args.command == "configure":
         configure()
+    elif args.command == "dashboard-auth":
+        dashboard_auth()
     elif args.command == "up":
         require_config()
         compose("up", "-d")

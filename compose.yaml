@@ -16,8 +16,14 @@ services:
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
-    # No published gateway/dashboard/API ports by default.
-    # Expose only behind a trusted reverse proxy with authentication.
+      # Off until 'make dashboard-auth' sets a login and enables it.
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-0}
+    # Only the dashboard is published, and only on host loopback. It binds
+    # 0.0.0.0 inside the container, so Hermes refuses to start it without a
+    # login. Gateway/API ports stay unpublished. For remote access use an SSH
+    # tunnel, Tailscale, or an authenticated reverse proxy (docs/security.md).
+    ports:
+      - "127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     shm_size: "1gb"
     pids_limit: 512
     stop_grace_period: 60s

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help init setup configure up down restart logs doctor backup backup-offsite restore restore-force restore-test upgrade check
+.PHONY: help init setup configure dashboard-auth up down restart logs doctor backup backup-offsite restore restore-force restore-test upgrade check
 
 PYTHON ?= python3
 CTL = $(PYTHON) scripts/hermesctl.py
@@ -13,6 +13,8 @@ setup:
 	@$(CTL) setup
 configure:
 	@$(CTL) configure
+dashboard-auth:
+	@$(CTL) dashboard-auth
 up:
 	@$(CTL) up
 down:

@@ -24,6 +24,15 @@ Use `make down` to stop the gateway. The agent data is stored in `./state/`, not
 
 The `skills/` directory is version-controlled and mounted read-only at `/opt/company-skills`. Local runtime skills can shadow external ones. `make doctor` detects same-named skills and warns.
 
+### Web dashboard
+
+```bash
+make dashboard-auth     # Choose a dashboard login; this also enables the dashboard
+make up                 # The command tells you when 'make restart' is needed instead
+```
+
+Then open http://127.0.0.1:9119. The dashboard is published on host loopback only and always requires the login. To use it from another machine, tunnel in instead of opening the port: `ssh -N -L 9119:127.0.0.1:9119 you@server`. Rerun `make dashboard-auth` to change the password; that also signs out every session. See [Dashboard exposure](docs/security.md#dashboard-exposure).
+
 ### Backups and restores
 
 ```bash
@@ -50,7 +59,7 @@ Run `make eval` on an **isolated test deployment** to execute the opt-in sample 
 
 ### Features
 
-- Pinned-image support, persistent bind-mounted state, and no network ports published by default.
+- Pinned-image support, persistent bind-mounted state, and a login-protected dashboard on host loopback as the only published port.
 - Git-managed skills in a read-only mount; separate native Hermes state for agent-created content.
 - Native Hermes SQLite-consistent ZIP backups and CRC verification.
 - Optional encrypted off-site Restic storage.
