@@ -1,0 +1,16 @@
+# Local Compose configuration
+.env
+.env.*
+!.env.example
+
+# Hermes mutable state and secrets
+state/
+backups/
+restore-test-*/
+*.zip
+
+# Local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store

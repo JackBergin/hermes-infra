@@ -1,0 +1,25 @@
+name: hermes-infra
+
+services:
+  hermes:
+    image: ${HERMES_IMAGE:?Set HERMES_IMAGE in .env}
+    restart: unless-stopped
+    command: gateway run
+    volumes:
+      - type: bind
+        source: ${HERMES_STATE_DIR:-./state}
+        target: /opt/data
+      - type: bind
+        source: ./skills
+        target: /opt/company-skills
+        read_only: true
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+    # No published gateway/dashboard/API ports by default.
+    # Expose only behind a trusted reverse proxy with authentication.
+    shm_size: "1gb"
+    pids_limit: 512
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
